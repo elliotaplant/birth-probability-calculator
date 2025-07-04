@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Birth Probability Calculator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        input[type="datetime-local"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        .probability {
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .custom-input {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+        .custom-input input {
+            width: 80px;
+            padding: 5px;
+            margin: 0 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        .info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e3f2fd;
+            border-radius: 5px;
+            font-size: 14px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Birth Probability Calculator</h1>
+        
+        <div class="input-group">
+            <label for="dueDate">Due Date:</label>
+            <input type="datetime-local" id="dueDate" required onchange="handleDueDateChange()">
+        </div>
+        
+        <div class="input-group">
+            <label for="currentDate">Current Date & Time:</label>
+            <input type="datetime-local" id="currentDate" onchange="calculateProbabilities()">
+        </div>
+        
+        <div class="results" id="results" style="display: none;">
+            <h3>Probability of birth in the next:</h3>
+            <div class="result-item">
+                <span>12 hours</span>
+                <span class="probability" id="prob12h">-</span>
+            </div>
+            <div class="result-item">
+                <span>1 day</span>
+                <span class="probability" id="prob1d">-</span>
+            </div>
+            <div class="result-item">
+                <span>2 days</span>
+                <span class="probability" id="prob2d">-</span>
+            </div>
+            <div class="result-item">
+                <span>5 days</span>
+                <span class="probability" id="prob5d">-</span>
+            </div>
+            <div class="result-item">
+                <span>10 days</span>
+                <span class="probability" id="prob10d">-</span>
+            </div>
+            <div class="result-item">
+                <span>20 days</span>
+                <span class="probability" id="prob20d">-</span>
+            </div>
+            
+            <div class="custom-input">
+                <label>Custom timeframe:</label>
+                <input type="number" id="customDays" placeholder="0" min="0" value="0">days
+                <input type="number" id="customHours" placeholder="0" min="0" max="23" value="0">hours
+                <button onclick="calculateCustom()">Calculate</button>
+                <div style="margin-top: 10px;">
+                    <span>Probability: </span>
+                    <span class="probability" id="probCustom">-</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-container" style="margin-top: 30px;">
+            <h3>Probability Distribution</h3>
+            <canvas id="probabilityChart" width="540" height="300"></canvas>
+        </div>
+        
+        <div class="info">
+            <strong>Model assumptions:</strong><br>
+            • Truncated normal distribution with mean at due date (40 weeks)<br>
+            • Standard deviation of 10 days<br>
+            • All babies induced by 42 weeks (100% probability)<br>
+            • No individual factors considered
+        </div>
+    </div>
+
+    <script>
+        // Standard normal CDF approximation (Abramowitz and Stegun)
+        function normalCDF(x) {
+            const a1 =  0.254829592;
+            const a2 = -0.284496736;
+            const a3 =  1.421413741;
+            const a4 = -1.453152027;
+            const a5 =  1.061405429;
+            const p  =  0.3275911;
+
+            const sign = x >= 0 ? 1 : -1;
+            x = Math.abs(x) / Math.sqrt(2);
+
+            const t = 1.0 / (1.0 + p * x);
+            const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+
+            return 0.5 * (1.0 + sign * y);
+        }
+
+        function calculateProbability(currentHours, hoursAhead) {
+            const mean = 6720; // 280 days * 24 hours
+            const stdDev = 240; // Reduced from 312 to ~10 days to ensure ~99% by 42 weeks
+            const truncationPoint = 7056; // 42 weeks * 7 days * 24 hours
+            
+            // Calculate z-scores
+            const z1 = (currentHours - mean) / stdDev;
+            const z2 = (currentHours + hoursAhead - mean) / stdDev;
+            const zTrunc = (truncationPoint - mean) / stdDev;
+            
+            // Calculate CDFs
+            const cdf1 = normalCDF(z1);
+            const cdf2 = normalCDF(z2);
+            const cdfTrunc = normalCDF(zTrunc);
+            
+            // Adjust for truncation - normalize by the CDF at truncation point
+            const adjustedCdf1 = Math.min(cdf1 / cdfTrunc, 1);
+            const adjustedCdf2 = Math.min(cdf2 / cdfTrunc, 1);
+            
+            // If we're past 42 weeks, probability is 1
+            if (currentHours >= truncationPoint) {
+                return 0;
+            }
+            if (currentHours + hoursAhead >= truncationPoint) {
+                return 1 - adjustedCdf1;
+            }
+            
+            // Conditional probability
+            const prob = (adjustedCdf2 - adjustedCdf1) / (1 - adjustedCdf1);
+            
+            return Math.max(0, Math.min(1, prob));
+        }
+
+        function drawChart() {
+            const canvas = document.getElementById('probabilityChart');
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+            
+            // Set up chart parameters
+            const padding = 50;
+            const leftPadding = 70;
+            const chartWidth = width - leftPadding - padding;
+            const chartHeight = height - 2 * padding;
+            
+            // Draw axes
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(leftPadding, padding);
+            ctx.lineTo(leftPadding, height - padding);
+            ctx.lineTo(width - padding, height - padding);
+            ctx.stroke();
+            
+            // Draw labels
+            ctx.fillStyle = '#333';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            
+            // X-axis labels (weeks)
+            for (let week = 30; week <= 42; week += 2) {
+                const x = leftPadding + ((week - 30) / 12) * chartWidth;
+                ctx.fillText(week + 'w', x, height - padding + 20);
+            }
+            
+            // Y-axis labels (probability)
+            ctx.textAlign = 'right';
+            for (let prob = 0; prob <= 1; prob += 0.2) {
+                const y = height - padding - prob * chartHeight;
+                ctx.fillText((prob * 100).toFixed(0) + '%', leftPadding - 10, y + 5);
+            }
+            
+            // Draw the CDF curve
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            const mean = 6720; // 280 days * 24 hours
+            const stdDev = 240; // Reduced to ~10 days
+            const truncationPoint = 7056; // 42 weeks
+            
+            for (let hours = 30 * 7 * 24; hours <= 42 * 7 * 24; hours += 24) {
+                const z = (hours - mean) / stdDev;
+                const zTrunc = (truncationPoint - mean) / stdDev;
+                let cdf = normalCDF(z);
+                
+                // Adjust for truncation
+                const cdfTrunc = normalCDF(zTrunc);
+                cdf = Math.min(cdf / cdfTrunc, 1);
+                
+                // Force to 100% at 42 weeks
+                if (hours >= truncationPoint) {
+                    cdf = 1;
+                }
+                
+                const x = leftPadding + ((hours / (7 * 24) - 30) / 12) * chartWidth;
+                const y = height - padding - cdf * chartHeight;
+                
+                if (hours === 30 * 7 * 24) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
+            
+            // Draw vertical line at due date
+            ctx.strokeStyle = '#f44336';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            const dueDateX = leftPadding + ((40 - 30) / 12) * chartWidth;
+            ctx.moveTo(dueDateX, padding);
+            ctx.lineTo(dueDateX, height - padding);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Add due date label
+            ctx.fillStyle = '#f44336';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Due Date', dueDateX, padding - 10);
+            
+            // If dates are set, show current position
+            const dueDateInput = document.getElementById('dueDate').value;
+            const currentDateInput = document.getElementById('currentDate').value;
+            
+            if (dueDateInput && currentDateInput) {
+                const dueDate = new Date(dueDateInput);
+                const currentDate = new Date(currentDateInput);
+                
+                const conceptionDate = new Date(dueDate);
+                conceptionDate.setDate(conceptionDate.getDate() - 280);
+                
+                const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
+                const weeksSinceConception = hoursSinceConception / (7 * 24);
+                
+                if (weeksSinceConception >= 30 && weeksSinceConception <= 42) {
+                    // Draw current position
+                    const currentX = leftPadding + ((weeksSinceConception - 30) / 12) * chartWidth;
+                    const z = (hoursSinceConception - mean) / stdDev;
+                    const zTrunc = (7056 - mean) / stdDev;
+                    let currentCDF = normalCDF(z);
+                    
+                    // Adjust for truncation
+                    const cdfTrunc = normalCDF(zTrunc);
+                    currentCDF = Math.min(currentCDF / cdfTrunc, 1);
+                    
+                    if (hoursSinceConception >= 7056) {
+                        currentCDF = 1;
+                    }
+                    
+                    const currentY = height - padding - currentCDF * chartHeight;
+                    
+                    // Draw vertical line at current position
+                    ctx.strokeStyle = '#4CAF50';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(currentX, padding);
+                    ctx.lineTo(currentX, height - padding);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    // Add current position label (same position as Due Date label)
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillText('Now', currentX, padding - 10);
+                    
+                    // Draw point at current position
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.beginPath();
+                    ctx.arc(currentX, currentY, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+            
+            // Add title
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Cumulative Birth Probability', width / 2, 20);
+            
+            // Add axis labels
+            ctx.save();
+            ctx.translate(20, height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('Probability', 0, 0);
+            ctx.restore();
+            
+            ctx.fillText('Gestational Age', width / 2, height - 5);
+        }
+
+        function handleDueDateChange() {
+            const dueDateInput = document.getElementById('dueDate').value;
+            if (dueDateInput) {
+                // Update URL hash with due date
+                const dueDate = new Date(dueDateInput);
+                window.location.hash = 'due=' + dueDate.toISOString().split('T')[0];
+            }
+            calculateProbabilities();
+        }
+
+        function loadDueDateFromHash() {
+            const hash = window.location.hash;
+            if (hash) {
+                const match = hash.match(/due=(\d{4}-\d{2}-\d{2})/);
+                if (match) {
+                    const dateStr = match[1];
+                    // Set the due date input
+                    document.getElementById('dueDate').value = dateStr + 'T00:00';
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function calculateProbabilities() {
+            const dueDateInput = document.getElementById('dueDate').value;
+            const currentDateInput = document.getElementById('currentDate').value;
+            
+            if (!dueDateInput || !currentDateInput) return;
+            
+            const dueDate = new Date(dueDateInput);
+            const currentDate = new Date(currentDateInput);
+            
+            // Calculate conception date (due date - 280 days)
+            const conceptionDate = new Date(dueDate);
+            conceptionDate.setDate(conceptionDate.getDate() - 280);
+            
+            // Calculate hours since conception
+            const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
+            
+            // Calculate probabilities for preset timeframes
+            const timeframes = [
+                { id: 'prob12h', hours: 12 },
+                { id: 'prob1d', hours: 24 },
+                { id: 'prob2d', hours: 48 },
+                { id: 'prob5d', hours: 120 },
+                { id: 'prob10d', hours: 240 },
+                { id: 'prob20d', hours: 480 }
+            ];
+            
+            timeframes.forEach(tf => {
+                const prob = calculateProbability(hoursSinceConception, tf.hours);
+                document.getElementById(tf.id).textContent = (prob * 100).toFixed(1) + '%';
+            });
+            
+            document.getElementById('results').style.display = 'block';
+            drawChart();
+        }
+
+        function calculateCustom() {
+            const dueDateInput = document.getElementById('dueDate').value;
+            const currentDateInput = document.getElementById('currentDate').value;
+            
+            if (!dueDateInput || !currentDateInput) {
+                alert('Please set both due date and current date first');
+                return;
+            }
+            
+            const days = parseFloat(document.getElementById('customDays').value) || 0;
+            const hours = parseFloat(document.getElementById('customHours').value) || 0;
+            const totalHours = days * 24 + hours;
+            
+            const dueDate = new Date(dueDateInput);
+            const currentDate = new Date(currentDateInput);
+            
+            const conceptionDate = new Date(dueDate);
+            conceptionDate.setDate(conceptionDate.getDate() - 280);
+            
+            const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
+            
+            const prob = calculateProbability(hoursSinceConception, totalHours);
+            document.getElementById('probCustom').textContent = (prob * 100).toFixed(1) + '%';
+        }
+
+        // Set default values
+        window.onload = function() {
+            // Try to load due date from URL hash
+            const hasHashDate = loadDueDateFromHash();
+            
+            if (!hasHashDate) {
+                // No hash date - leave due date empty and don't calculate
+                document.getElementById('results').style.display = 'none';
+            } else {
+                // We have a due date from hash, calculate probabilities
+                calculateProbabilities();
+                drawChart();
+            }
+            
+            // Always set current date to now
+            const now = new Date();
+            document.getElementById('currentDate').value = now.toISOString().slice(0, 16);
+        };
+        
+        // Listen for hash changes (browser back/forward)
+        window.addEventListener('hashchange', function() {
+            loadDueDateFromHash();
+            calculateProbabilities();
+            drawChart();
+        });
+    </script>
+</body>
+</html>
