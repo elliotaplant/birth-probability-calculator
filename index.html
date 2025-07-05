@@ -59,8 +59,6 @@
         }
         .custom-input {
             margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #e0e0e0;
         }
         .custom-input input {
             width: 80px;
@@ -85,12 +83,12 @@
         
         <div class="input-group">
             <label for="dueDate">Due Date:</label>
-            <input type="datetime-local" id="dueDate" required onchange="handleDueDateChange()">
+            <input type="date" id="dueDate" required onchange="handleDueDateChange()">
         </div>
         
         <div class="input-group">
-            <label for="currentDate">Current Date & Time:</label>
-            <input type="datetime-local" id="currentDate" onchange="calculateProbabilities()">
+            <label for="currentDate">Current Date:</label>
+            <input type="date" id="currentDate" onchange="calculateProbabilities()">
         </div>
         
         <div class="results" id="results" style="display: none;">
@@ -167,10 +165,21 @@
 
         function calculateProbability(currentHours, hoursAhead) {
             const mean = 6720; // 280 days * 24 hours
-            const stdDev = 240; // Reduced from 312 to ~10 days to ensure ~99% by 42 weeks
+            const stdDev = 240; // ~10 days standard deviation
             const truncationPoint = 7056; // 42 weeks * 7 days * 24 hours
             
-            // Calculate z-scores
+            // If we're at or past 42 weeks, 100% chance
+            if (currentHours >= truncationPoint) {
+                return 1;
+            }
+            
+            // For extreme overdue (past statistical model's validity)
+            const daysPastDue = (currentHours - mean) / 24;
+            if (daysPastDue > 10) {
+                return 1;
+            }
+            
+            // Normal statistical calculation
             const z1 = (currentHours - mean) / stdDev;
             const z2 = (currentHours + hoursAhead - mean) / stdDev;
             const zTrunc = (truncationPoint - mean) / stdDev;
@@ -180,19 +189,20 @@
             const cdf2 = normalCDF(z2);
             const cdfTrunc = normalCDF(zTrunc);
             
-            // Adjust for truncation - normalize by the CDF at truncation point
-            const adjustedCdf1 = Math.min(cdf1 / cdfTrunc, 1);
-            const adjustedCdf2 = Math.min(cdf2 / cdfTrunc, 1);
+            // For truncated distribution
+            const adjustedCdf1 = cdf1 / cdfTrunc;
+            const adjustedCdf2 = cdf2 / cdfTrunc;
             
-            // If we're past 42 weeks, probability is 1
-            if (currentHours >= truncationPoint) {
-                return 0;
+            // Handle edge cases
+            if (adjustedCdf1 >= 1) {
+                return 1;
             }
+            
             if (currentHours + hoursAhead >= truncationPoint) {
                 return 1 - adjustedCdf1;
             }
             
-            // Conditional probability
+            // Conditional probability: P(birth in next period | not born yet)
             const prob = (adjustedCdf2 - adjustedCdf1) / (1 - adjustedCdf1);
             
             return Math.max(0, Math.min(1, prob));
@@ -378,7 +388,7 @@
                 if (match) {
                     const dateStr = match[1];
                     // Set the due date input
-                    document.getElementById('dueDate').value = dateStr + 'T00:00';
+                    document.getElementById('dueDate').value = dateStr;
                     return true;
                 }
             }
@@ -391,8 +401,9 @@
             
             if (!dueDateInput || !currentDateInput) return;
             
-            const dueDate = new Date(dueDateInput);
-            const currentDate = new Date(currentDateInput);
+            // Parse dates at midnight local time to avoid timezone issues
+            const dueDate = new Date(dueDateInput + 'T00:00:00');
+            const currentDate = new Date(currentDateInput + 'T00:00:00');
             
             // Calculate conception date (due date - 280 days)
             const conceptionDate = new Date(dueDate);
@@ -400,6 +411,11 @@
             
             // Calculate hours since conception
             const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
+            
+            // Debug: log the calculation
+            const daysSinceConception = hoursSinceConception / 24;
+            const daysFromDueDate = daysSinceConception - 280;
+            console.log(`Days since conception: ${daysSinceConception.toFixed(1)}, Days from due date: ${daysFromDueDate.toFixed(1)}, Hours: ${hoursSinceConception.toFixed(1)}`);
             
             // Calculate probabilities for preset timeframes
             const timeframes = [
@@ -433,8 +449,9 @@
             const hours = parseFloat(document.getElementById('customHours').value) || 0;
             const totalHours = days * 24 + hours;
             
-            const dueDate = new Date(dueDateInput);
-            const currentDate = new Date(currentDateInput);
+            // Parse dates at midnight local time to avoid timezone issues
+            const dueDate = new Date(dueDateInput + 'T00:00:00');
+            const currentDate = new Date(currentDateInput + 'T00:00:00');
             
             const conceptionDate = new Date(dueDate);
             conceptionDate.setDate(conceptionDate.getDate() - 280);
@@ -450,18 +467,21 @@
             // Try to load due date from URL hash
             const hasHashDate = loadDueDateFromHash();
             
-            if (!hasHashDate) {
-                // No hash date - leave due date empty and don't calculate
-                document.getElementById('results').style.display = 'none';
-            } else {
-                // We have a due date from hash, calculate probabilities
-                calculateProbabilities();
-                drawChart();
-            }
-            
             // Always set current date to now
             const now = new Date();
-            document.getElementById('currentDate').value = now.toISOString().slice(0, 16);
+            document.getElementById('currentDate').value = now.toISOString().slice(0, 10);
+            
+            // Check if due date input has any value (from hash or otherwise)
+            const dueDateInput = document.getElementById('dueDate').value;
+            
+            if (dueDateInput) {
+                // We have a due date, calculate probabilities
+                calculateProbabilities();
+                drawChart();
+            } else {
+                // No due date - hide results
+                document.getElementById('results').style.display = 'none';
+            }
         };
         
         // Listen for hash changes (browser back/forward)
