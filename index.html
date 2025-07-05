@@ -136,78 +136,122 @@
         </div>
         
         <div class="info">
-            <strong>Model assumptions:</strong><br>
-            • Truncated normal distribution with mean at due date (40 weeks)<br>
-            • Standard deviation of 10 days<br>
-            • All babies induced by 42 weeks (100% probability)<br>
-            • No individual factors considered
+            <strong>Model based on empirical data:</strong><br>
+            • Peak probability at day 273 (39 weeks, 7 days before due date): 4.5%<br>
+            • Due date (day 280, 40 weeks): 3.0% probability<br>
+            • All births occur by end of week 42 (day 294)<br>
+            • Based on population statistics, individual factors not considered
         </div>
     </div>
 
     <script>
-        // Standard normal CDF approximation (Abramowitz and Stegun)
-        function normalCDF(x) {
-            const a1 =  0.254829592;
-            const a2 = -0.284496736;
-            const a3 =  1.421413741;
-            const a4 = -1.453152027;
-            const a5 =  1.061405429;
-            const p  =  0.3275911;
-
-            const sign = x >= 0 ? 1 : -1;
-            x = Math.abs(x) / Math.sqrt(2);
-
-            const t = 1.0 / (1.0 + p * x);
-            const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-
-            return 0.5 * (1.0 + sign * y);
+        // Birth probability table based on empirical data
+        const birthProbabilityTable = new Array(295).fill(0);
+        
+        // Fill in the empirical data
+        birthProbabilityTable[154] = 0.00001;  // 0.001%
+        birthProbabilityTable[160] = 0.00001;  // 0.001%
+        birthProbabilityTable[168] = 0.00002;  // 0.002%
+        birthProbabilityTable[170] = 0.00002;  // 0.002%
+        birthProbabilityTable[180] = 0.00005;  // 0.005%
+        birthProbabilityTable[190] = 0.0001;   // 0.01%
+        birthProbabilityTable[200] = 0.0002;   // 0.02%
+        birthProbabilityTable[210] = 0.0005;   // 0.05%
+        birthProbabilityTable[220] = 0.0008;   // 0.08%
+        birthProbabilityTable[230] = 0.001;    // 0.1%
+        birthProbabilityTable[240] = 0.002;    // 0.2%
+        birthProbabilityTable[245] = 0.002;    // 0.2%
+        birthProbabilityTable[250] = 0.003;    // 0.3%
+        birthProbabilityTable[255] = 0.005;    // 0.5%
+        birthProbabilityTable[260] = 0.01;     // 1.0%
+        birthProbabilityTable[265] = 0.015;    // 1.5%
+        birthProbabilityTable[270] = 0.03;     // 3.0%
+        birthProbabilityTable[273] = 0.045;    // 4.5% - Peak
+        birthProbabilityTable[275] = 0.04;     // 4.0%
+        birthProbabilityTable[277] = 0.035;    // 3.5%
+        birthProbabilityTable[280] = 0.03;     // 3.0% - Due date
+        birthProbabilityTable[283] = 0.025;    // 2.5%
+        birthProbabilityTable[285] = 0.02;     // 2.0%
+        birthProbabilityTable[290] = 0.01;     // 1.0%
+        birthProbabilityTable[294] = 0.004;    // 0.4% - End of week 42
+        
+        // Interpolate missing values
+        function interpolateTable() {
+            for (let i = 0; i < birthProbabilityTable.length - 1; i++) {
+                if (birthProbabilityTable[i] > 0 && birthProbabilityTable[i + 1] === 0) {
+                    // Find next non-zero value
+                    let j = i + 1;
+                    while (j < birthProbabilityTable.length && birthProbabilityTable[j] === 0) j++;
+                    
+                    if (j < birthProbabilityTable.length) {
+                        // Linear interpolation
+                        const steps = j - i;
+                        const increment = (birthProbabilityTable[j] - birthProbabilityTable[i]) / steps;
+                        for (let k = i + 1; k < j; k++) {
+                            birthProbabilityTable[k] = birthProbabilityTable[i] + increment * (k - i);
+                        }
+                    }
+                }
+            }
         }
-
-        function calculateProbability(currentHours, hoursAhead) {
-            const mean = 6720; // 280 days * 24 hours
-            const stdDev = 240; // ~10 days standard deviation
-            const truncationPoint = 7056; // 42 weeks * 7 days * 24 hours
-            
-            // If we're at or past 42 weeks, 100% chance
-            if (currentHours >= truncationPoint) {
-                return 1;
+        
+        interpolateTable();
+        
+        // Calculate remaining days weight
+        function calculateRemainingDaysWeight(currentDay) {
+            let sumFromTodayToEnd = 0;
+            for (let day = currentDay; day < birthProbabilityTable.length; day++) {
+                sumFromTodayToEnd += birthProbabilityTable[day];
             }
-            
-            // For extreme overdue (past statistical model's validity)
-            const daysPastDue = (currentHours - mean) / 24;
-            if (daysPastDue > 10) {
-                return 1;
-            }
-            
-            // Normal statistical calculation
-            const z1 = (currentHours - mean) / stdDev;
-            const z2 = (currentHours + hoursAhead - mean) / stdDev;
-            const zTrunc = (truncationPoint - mean) / stdDev;
-            
-            // Calculate CDFs
-            const cdf1 = normalCDF(z1);
-            const cdf2 = normalCDF(z2);
-            const cdfTrunc = normalCDF(zTrunc);
-            
-            // For truncated distribution
-            const adjustedCdf1 = cdf1 / cdfTrunc;
-            const adjustedCdf2 = cdf2 / cdfTrunc;
-            
-            // Handle edge cases
-            if (adjustedCdf1 >= 1) {
-                return 1;
-            }
-            
-            if (currentHours + hoursAhead >= truncationPoint) {
-                return 1 - adjustedCdf1;
-            }
-            
-            // Conditional probability: P(birth in next period | not born yet)
-            const prob = (adjustedCdf2 - adjustedCdf1) / (1 - adjustedCdf1);
-            
-            return Math.max(0, Math.min(1, prob));
+            return sumFromTodayToEnd > 0 ? 1 / sumFromTodayToEnd : 0;
         }
-
+        
+        // Calculate probability of birth in next N hours
+        function calculateProbability(hoursSinceConception, hoursAhead) {
+            const currentDay = Math.floor(hoursSinceConception / 24);
+            const hoursIntoDay = hoursSinceConception % 24;
+            
+            if (currentDay >= birthProbabilityTable.length || currentDay < 0) {
+                return currentDay >= birthProbabilityTable.length ? 1 : 0;
+            }
+            
+            const remainingDaysWeight = calculateRemainingDaysWeight(currentDay);
+            let sum = 0;
+            
+            // Calculate how many full days and partial days we're looking ahead
+            const daysAhead = hoursAhead / 24;
+            const fullDaysAhead = Math.floor(daysAhead);
+            const partialDayFraction = daysAhead % 1;
+            
+            // Add probabilities for full days
+            for (let i = 0; i < fullDaysAhead && (currentDay + i) < birthProbabilityTable.length; i++) {
+                if (i === 0) {
+                    // For the current day, only count the remaining hours
+                    sum += birthProbabilityTable[currentDay] * (1 - hoursIntoDay / 24);
+                } else {
+                    sum += birthProbabilityTable[currentDay + i];
+                }
+            }
+            
+            // Add partial day probability
+            if (partialDayFraction > 0 && (currentDay + fullDaysAhead) < birthProbabilityTable.length) {
+                if (fullDaysAhead === 0) {
+                    // Looking ahead less than a day from current position
+                    const remainingTodayFraction = 1 - hoursIntoDay / 24;
+                    const effectiveFraction = Math.min(partialDayFraction, remainingTodayFraction);
+                    sum += birthProbabilityTable[currentDay] * effectiveFraction;
+                    
+                    if (partialDayFraction > remainingTodayFraction && currentDay + 1 < birthProbabilityTable.length) {
+                        sum += birthProbabilityTable[currentDay + 1] * (partialDayFraction - remainingTodayFraction);
+                    }
+                } else {
+                    sum += birthProbabilityTable[currentDay + fullDaysAhead] * partialDayFraction;
+                }
+            }
+            
+            return Math.min(sum * remainingDaysWeight, 1);
+        }
+        
         function drawChart() {
             const canvas = document.getElementById('probabilityChart');
             const ctx = canvas.getContext('2d');
@@ -250,33 +294,37 @@
                 ctx.fillText((prob * 100).toFixed(0) + '%', leftPadding - 10, y + 5);
             }
             
-            // Draw the CDF curve
+            // Draw the CDF curve based on empirical data
             ctx.strokeStyle = '#2196F3';
             ctx.lineWidth = 3;
             ctx.beginPath();
             
-            const mean = 6720; // 280 days * 24 hours
-            const stdDev = 240; // Reduced to ~10 days
-            const truncationPoint = 7056; // 42 weeks
+            // Calculate cumulative probabilities
+            let cumulative = 0;
+            const cumulativeProbabilities = [];
+            for (let day = 0; day < birthProbabilityTable.length; day++) {
+                cumulative += birthProbabilityTable[day];
+                cumulativeProbabilities[day] = cumulative;
+            }
             
-            for (let hours = 30 * 7 * 24; hours <= 42 * 7 * 24; hours += 24) {
-                const z = (hours - mean) / stdDev;
-                const zTrunc = (truncationPoint - mean) / stdDev;
-                let cdf = normalCDF(z);
-                
-                // Adjust for truncation
-                const cdfTrunc = normalCDF(zTrunc);
-                cdf = Math.min(cdf / cdfTrunc, 1);
-                
-                // Force to 100% at 42 weeks
-                if (hours >= truncationPoint) {
-                    cdf = 1;
+            // Normalize to ensure it reaches 1.0
+            const totalProb = cumulativeProbabilities[cumulativeProbabilities.length - 1];
+            if (totalProb > 0) {
+                for (let day = 0; day < cumulativeProbabilities.length; day++) {
+                    cumulativeProbabilities[day] /= totalProb;
                 }
+            }
+            
+            // Draw the curve
+            for (let week = 30; week <= 42; week += 0.5) {
+                const day = Math.floor(week * 7);
+                if (day >= cumulativeProbabilities.length) continue;
                 
-                const x = leftPadding + ((hours / (7 * 24) - 30) / 12) * chartWidth;
+                const cdf = cumulativeProbabilities[day] || 0;
+                const x = leftPadding + ((week - 30) / 12) * chartWidth;
                 const y = height - padding - cdf * chartHeight;
                 
-                if (hours === 30 * 7 * 24) {
+                if (week === 30) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);
@@ -318,16 +366,21 @@
                 if (weeksSinceConception >= 30 && weeksSinceConception <= 42) {
                     // Draw current position
                     const currentX = leftPadding + ((weeksSinceConception - 30) / 12) * chartWidth;
-                    const z = (hoursSinceConception - mean) / stdDev;
-                    const zTrunc = (7056 - mean) / stdDev;
-                    let currentCDF = normalCDF(z);
+                    const currentDay = Math.floor(hoursSinceConception / 24);
                     
-                    // Adjust for truncation
-                    const cdfTrunc = normalCDF(zTrunc);
-                    currentCDF = Math.min(currentCDF / cdfTrunc, 1);
+                    // Calculate current CDF
+                    let currentCDF = 0;
+                    let totalProb = 0;
+                    for (let day = 0; day < birthProbabilityTable.length; day++) {
+                        totalProb += birthProbabilityTable[day];
+                        if (day <= currentDay) {
+                            currentCDF += birthProbabilityTable[day];
+                        }
+                    }
                     
-                    if (hoursSinceConception >= 7056) {
-                        currentCDF = 1;
+                    // Normalize
+                    if (totalProb > 0) {
+                        currentCDF /= totalProb;
                     }
                     
                     const currentY = height - padding - currentCDF * chartHeight;
