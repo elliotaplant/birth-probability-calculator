@@ -258,6 +258,10 @@
             const width = canvas.width;
             const height = canvas.height;
             
+            // Get dates early
+            const dueDateInput = document.getElementById('dueDate').value;
+            const currentDateInput = document.getElementById('currentDate').value;
+            
             // Clear canvas
             ctx.clearRect(0, 0, width, height);
             
@@ -281,9 +285,29 @@
             ctx.font = '12px sans-serif';
             ctx.textAlign = 'center';
             
+            // Calculate x-axis range
+            let startWeek = 30;
+            let endWeek = 42;
+            
+            if (dueDateInput && currentDateInput) {
+                const dueDate = new Date(dueDateInput);
+                const currentDate = new Date(currentDateInput);
+                const conceptionDate = new Date(dueDate);
+                conceptionDate.setDate(conceptionDate.getDate() - 280);
+                
+                const currentDays = (currentDate - conceptionDate) / (1000 * 60 * 60 * 24);
+                const dueDays = 280;
+                
+                // min(now, due date) - 2 weeks, but not less than 0
+                const minDays = Math.min(currentDays, dueDays) - 14;
+                startWeek = Math.max(0, minDays / 7);
+            }
+            
+            const weekRange = endWeek - startWeek;
+            
             // X-axis labels (weeks)
-            for (let week = 30; week <= 42; week += 2) {
-                const x = leftPadding + ((week - 30) / 12) * chartWidth;
+            for (let week = Math.ceil(startWeek); week <= endWeek; week += Math.max(1, Math.floor(weekRange / 6))) {
+                const x = leftPadding + ((week - startWeek) / weekRange) * chartWidth;
                 ctx.fillText(week + 'w', x, height - padding + 20);
             }
             
@@ -316,43 +340,44 @@
             }
             
             // Draw the curve
-            for (let week = 30; week <= 42; week += 0.5) {
+            let firstPoint = true;
+            for (let week = startWeek; week <= endWeek; week += 0.25) {
                 const day = Math.floor(week * 7);
                 if (day >= cumulativeProbabilities.length) continue;
                 
                 const cdf = cumulativeProbabilities[day] || 0;
-                const x = leftPadding + ((week - 30) / 12) * chartWidth;
+                const x = leftPadding + ((week - startWeek) / weekRange) * chartWidth;
                 const y = height - padding - cdf * chartHeight;
                 
-                if (week === 30) {
+                if (firstPoint) {
                     ctx.moveTo(x, y);
+                    firstPoint = false;
                 } else {
                     ctx.lineTo(x, y);
                 }
             }
             ctx.stroke();
             
-            // Draw vertical line at due date
-            ctx.strokeStyle = '#f44336';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.beginPath();
-            const dueDateX = leftPadding + ((40 - 30) / 12) * chartWidth;
-            ctx.moveTo(dueDateX, padding);
-            ctx.lineTo(dueDateX, height - padding);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            // Add due date label
-            ctx.fillStyle = '#f44336';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Due Date', dueDateX, padding - 10);
+            // Draw vertical line at due date (only if visible in range)
+            if (40 >= startWeek && 40 <= endWeek) {
+                ctx.strokeStyle = '#f44336';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                const dueDateX = leftPadding + ((40 - startWeek) / weekRange) * chartWidth;
+                ctx.moveTo(dueDateX, padding);
+                ctx.lineTo(dueDateX, height - padding);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+                // Add due date label
+                ctx.fillStyle = '#f44336';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Due Date', dueDateX, padding - 10);
+            }
             
             // If dates are set, show current position
-            const dueDateInput = document.getElementById('dueDate').value;
-            const currentDateInput = document.getElementById('currentDate').value;
-            
             if (dueDateInput && currentDateInput) {
                 const dueDate = new Date(dueDateInput);
                 const currentDate = new Date(currentDateInput);
@@ -363,9 +388,9 @@
                 const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
                 const weeksSinceConception = hoursSinceConception / (7 * 24);
                 
-                if (weeksSinceConception >= 30 && weeksSinceConception <= 42) {
+                if (weeksSinceConception >= startWeek && weeksSinceConception <= endWeek) {
                     // Draw current position
-                    const currentX = leftPadding + ((weeksSinceConception - 30) / 12) * chartWidth;
+                    const currentX = leftPadding + ((weeksSinceConception - startWeek) / weekRange) * chartWidth;
                     const currentDay = Math.floor(hoursSinceConception / 24);
                     
                     // Calculate current CDF
