@@ -296,17 +296,19 @@
                 conceptionDate.setDate(conceptionDate.getDate() - 280);
                 
                 const currentDays = (currentDate - conceptionDate) / (1000 * 60 * 60 * 24);
-                const dueDays = 280;
                 
-                // min(now, due date) - 2 weeks, but not less than 0
-                const minDays = Math.min(currentDays, dueDays) - 14;
-                startWeek = Math.max(0, minDays / 7);
+                // Start at current date
+                startWeek = Math.max(0, currentDays / 7);
             }
             
             const weekRange = endWeek - startWeek;
             
             // X-axis labels (weeks)
-            for (let week = Math.ceil(startWeek); week <= endWeek; week += Math.max(1, Math.floor(weekRange / 6))) {
+            // First label at x=0 (Now)
+            ctx.fillText('Now', leftPadding, height - padding + 20);
+            
+            // Other week labels
+            for (let week = Math.ceil(startWeek) + 1; week <= endWeek; week += Math.max(1, Math.floor(weekRange / 6))) {
                 const x = leftPadding + ((week - startWeek) / weekRange) * chartWidth;
                 ctx.fillText(week + 'w', x, height - padding + 20);
             }
@@ -318,36 +320,41 @@
                 ctx.fillText((prob * 100).toFixed(0) + '%', leftPadding - 10, y + 5);
             }
             
-            // Draw the CDF curve based on empirical data
+            // Draw the probability curve
             ctx.strokeStyle = '#2196F3';
             ctx.lineWidth = 3;
             ctx.beginPath();
             
-            // Calculate cumulative probabilities
-            let cumulative = 0;
-            const cumulativeProbabilities = [];
-            for (let day = 0; day < birthProbabilityTable.length; day++) {
-                cumulative += birthProbabilityTable[day];
-                cumulativeProbabilities[day] = cumulative;
+            // Get current hours since conception
+            let currentHoursSinceConception = 0;
+            if (dueDateInput && currentDateInput) {
+                const dueDate = new Date(dueDateInput);
+                const currentDate = new Date(currentDateInput);
+                const conceptionDate = new Date(dueDate);
+                conceptionDate.setDate(conceptionDate.getDate() - 280);
+                currentHoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
             }
             
-            // Normalize to ensure it reaches 1.0
-            const totalProb = cumulativeProbabilities[cumulativeProbabilities.length - 1];
-            if (totalProb > 0) {
-                for (let day = 0; day < cumulativeProbabilities.length; day++) {
-                    cumulativeProbabilities[day] /= totalProb;
-                }
+            // Draw the curve showing probability of birth by each future day
+            let firstPoint = true;
+            let maxProb = 0;
+            const probabilities = [];
+            
+            // Calculate probabilities for scaling
+            for (let week = startWeek; week <= endWeek; week += 0.25) {
+                const targetHours = week * 7 * 24;
+                const hoursUntilTarget = Math.max(0, targetHours - currentHoursSinceConception);
+                const prob = calculateProbability(currentHoursSinceConception, hoursUntilTarget);
+                probabilities.push(prob);
+                maxProb = Math.max(maxProb, prob);
             }
             
             // Draw the curve
-            let firstPoint = true;
+            let weekIndex = 0;
             for (let week = startWeek; week <= endWeek; week += 0.25) {
-                const day = Math.floor(week * 7);
-                if (day >= cumulativeProbabilities.length) continue;
-                
-                const cdf = cumulativeProbabilities[day] || 0;
+                const prob = probabilities[weekIndex++];
                 const x = leftPadding + ((week - startWeek) / weekRange) * chartWidth;
-                const y = height - padding - cdf * chartHeight;
+                const y = height - padding - prob * chartHeight;
                 
                 if (firstPoint) {
                     ctx.moveTo(x, y);
@@ -377,67 +384,12 @@
                 ctx.fillText('Due Date', dueDateX, padding - 10);
             }
             
-            // If dates are set, show current position
-            if (dueDateInput && currentDateInput) {
-                const dueDate = new Date(dueDateInput);
-                const currentDate = new Date(currentDateInput);
-                
-                const conceptionDate = new Date(dueDate);
-                conceptionDate.setDate(conceptionDate.getDate() - 280);
-                
-                const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
-                const weeksSinceConception = hoursSinceConception / (7 * 24);
-                
-                if (weeksSinceConception >= startWeek && weeksSinceConception <= endWeek) {
-                    // Draw current position
-                    const currentX = leftPadding + ((weeksSinceConception - startWeek) / weekRange) * chartWidth;
-                    const currentDay = Math.floor(hoursSinceConception / 24);
-                    
-                    // Calculate current CDF
-                    let currentCDF = 0;
-                    let totalProb = 0;
-                    for (let day = 0; day < birthProbabilityTable.length; day++) {
-                        totalProb += birthProbabilityTable[day];
-                        if (day <= currentDay) {
-                            currentCDF += birthProbabilityTable[day];
-                        }
-                    }
-                    
-                    // Normalize
-                    if (totalProb > 0) {
-                        currentCDF /= totalProb;
-                    }
-                    
-                    const currentY = height - padding - currentCDF * chartHeight;
-                    
-                    // Draw vertical line at current position
-                    ctx.strokeStyle = '#4CAF50';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]);
-                    ctx.beginPath();
-                    ctx.moveTo(currentX, padding);
-                    ctx.lineTo(currentX, height - padding);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                    
-                    // Add current position label (same position as Due Date label)
-                    ctx.fillStyle = '#4CAF50';
-                    ctx.font = 'bold 12px sans-serif';
-                    ctx.fillText('Now', currentX, padding - 10);
-                    
-                    // Draw point at current position
-                    ctx.fillStyle = '#4CAF50';
-                    ctx.beginPath();
-                    ctx.arc(currentX, currentY, 5, 0, 2 * Math.PI);
-                    ctx.fill();
-                }
-            }
             
             // Add title
             ctx.fillStyle = '#333';
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('Cumulative Birth Probability', width / 2, 20);
+            ctx.fillText('Probability of Birth by Each Date', width / 2, 20);
             
             // Add axis labels
             ctx.save();
@@ -490,10 +442,6 @@
             // Calculate hours since conception
             const hoursSinceConception = (currentDate - conceptionDate) / (1000 * 60 * 60);
             
-            // Debug: log the calculation
-            const daysSinceConception = hoursSinceConception / 24;
-            const daysFromDueDate = daysSinceConception - 280;
-            console.log(`Days since conception: ${daysSinceConception.toFixed(1)}, Days from due date: ${daysFromDueDate.toFixed(1)}, Hours: ${hoursSinceConception.toFixed(1)}`);
             
             // Calculate probabilities for preset timeframes
             const timeframes = [
