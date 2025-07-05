@@ -32,12 +32,15 @@
             color: #555;
             font-weight: 500;
         }
-        input[type="datetime-local"] {
+        input[type="date"] {
             width: 100%;
-            padding: 10px;
+            padding: 14px 16px;
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 16px;
+            -webkit-appearance: none;
+            appearance: none;
+            box-sizing: border-box;
         }
         .results {
             margin-top: 30px;
@@ -63,10 +66,12 @@
         }
         .custom-input input {
             width: 80px;
-            padding: 5px;
+            padding: 8px 10px;
             margin: 0 5px;
             border: 1px solid #ddd;
-            border-radius: 3px;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
         }
         .info {
             margin-top: 20px;
@@ -75,6 +80,46 @@
             border-radius: 5px;
             font-size: 14px;
             color: #555;
+        }
+        
+        .chart-container {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        #probabilityChart {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* Mobile responsive styles */
+        @media (max-width: 640px) {
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: white;
+            }
+            
+            .container {
+                border-radius: 0;
+                box-shadow: none;
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 24px;
+                margin-bottom: 20px;
+            }
+            
+            .custom-input input {
+                font-size: 16px;
+                padding: 8px;
+            }
+            
+            #probabilityChart {
+                width: 100%;
+                max-width: 100%;
+            }
         }
     </style>
 </head>
@@ -121,9 +166,8 @@
             
             <div class="custom-input">
                 <label>Custom timeframe:</label>
-                <input type="number" id="customDays" placeholder="0" min="0" value="0">days
-                <input type="number" id="customHours" placeholder="0" min="0" max="23" value="0">hours
-                <button onclick="calculateCustom()">Calculate</button>
+                <input type="number" id="customDays" placeholder="30" min="0" value="30" onchange="calculateCustom()" oninput="calculateCustom()">days
+                <input type="number" id="customHours" placeholder="0" min="0" max="23" value="0" onchange="calculateCustom()" oninput="calculateCustom()">hours
                 <div style="margin-top: 10px;">
                     <span>Probability: </span>
                     <span class="probability" id="probCustom">-</span>
@@ -133,7 +177,7 @@
         
         <div class="chart-container" style="margin-top: 30px;">
             <h3>Probability Distribution</h3>
-            <canvas id="probabilityChart" width="540" height="300"></canvas>
+            <canvas id="probabilityChart" width="540" height="300" style="display: block; margin: 0 auto;"></canvas>
         </div>
         
         <div class="info">
@@ -471,6 +515,9 @@
                 const prob = calculateProbability(hoursSinceConception, tf.hours);
                 document.getElementById(tf.id).textContent = (prob * 100).toFixed(1) + '%';
             });
+            
+            // Also calculate custom timeframe
+            calculateCustom();
             
             document.getElementById('results').style.display = 'block';
             drawChart();
